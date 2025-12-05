@@ -64,6 +64,8 @@ const useRssFeeds = computed(() => store.getters.getUseRssFeeds)
 
 const activeSubscriptionList = computed(() => store.getters.getActiveProfile.subscriptions)
 
+const activeProfileId = computed(() => store.getters.getActiveProfile._id)
+
 const cacheEntriesForAllActiveProfileChannels = computed(() => {
   const postsCache = store.getters.getPostsCache
   const entries = []
@@ -147,22 +149,25 @@ function loadPostsFromRemoteFirstPerWindowSometimes() {
 
   alreadyLoadedRemotely = true
   loadPostsForSubscriptionsFromRemote()
-  store.commit('setSubscriptionForPostsFirstAutoFetchRun')
+  store.commit('setSubscriptionForPostsFirstAutoFetchRun', activeProfileId.value)
 }
 
 function loadPostsFromCacheSometimes() {
   // Can only load reliably when cache ready
   if (!subscriptionCacheReady.value) { return }
 
-  // This method is called on view visible
-  if (postCacheForAllActiveProfileChannelsPresent.value) {
-    loadPostsFromCacheForAllActiveProfileChannels()
+  // Check if this profile needs to be auto-fetched for the first time
+  if (fetchSubscriptionsAutomatically.value && !store.getters.getSubscriptionForPostsFirstAutoFetchRun) {
+    // `isLoading.value = false` is called inside `loadPostsForSubscriptionsFromRemote` when needed
+    alreadyLoadedRemotely = true
+    loadPostsForSubscriptionsFromRemote()
+    store.commit('setSubscriptionForPostsFirstAutoFetchRun', activeProfileId.value)
     return
   }
 
-  if (fetchSubscriptionsAutomatically.value) {
-    // `isLoading.value = false` is called inside `loadPostsForSubscriptionsFromRemote` when needed
-    loadPostsForSubscriptionsFromRemote()
+  // This method is called on view visible
+  if (postCacheForAllActiveProfileChannelsPresent.value) {
+    loadPostsFromCacheForAllActiveProfileChannels()
     return
   }
 
