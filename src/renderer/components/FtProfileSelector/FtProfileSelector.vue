@@ -26,6 +26,7 @@
       ref="profileListRef"
       class="profileList"
       tabindex="-1"
+      :style="{ '--profile-columns': profilesDisplayColumns }"
       @focusout="handleProfileListFocusOut"
       @keydown.esc.stop="handleProfileListEscape"
     >
@@ -45,6 +46,7 @@
         class="profileWrapper"
         role="listbox"
         :aria-labelledby="id + 'title'"
+        :style="{ '--profile-columns': profilesDisplayColumns }"
       >
         <div
           v-for="profile in profileList"
@@ -124,6 +126,10 @@ const activeProfileInitial = computed(() => {
   return activeProfile.value?.name
     ? getFirstCharacter(translateProfileName(activeProfile.value), locale.value)
     : ''
+})
+
+const profilesDisplayColumns = computed(() => {
+  return store.getters.getProfilesDisplayColumns
 })
 
 /** @type {import('vue').ComputedRef<Record<Profile['_id'], string>>} */
