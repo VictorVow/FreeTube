@@ -25,8 +25,8 @@ import {
   getChannelPlaylistId
 } from '../helpers/utils'
 import { getInvidiousChannelVideos, invidiousFetch } from '../helpers/api/invidious'
-import { getLocalChannelVideos } from '../helpers/api/local'
-import { parseYouTubeRSSFeed, updateVideoListAfterProcessing } from '../helpers/subscriptions'
+import { getLocalChannelVideos, getLocalPlaylist } from '../helpers/api/local'
+import { parseYouTubeChannelRSSFeed, parseYouTubePlaylistRSSFeed, updateVideoListAfterProcessing } from '../helpers/subscriptions'
 
 const { t } = useI18n()
 
@@ -58,6 +58,7 @@ const useRssFeeds = computed(() => store.getters.getUseRssFeeds)
 const fetchSubscriptionsAutomatically = computed(() => store.getters.getFetchSubscriptionsAutomatically)
 
 const activeSubscriptionList = computed(() => store.getters.getActiveProfile.subscriptions)
+const activePlaylistSubscriptionList = computed(() => store.getters.getActiveProfile.listSubscriptions || [])
 
 const activeProfileId = computed(() => store.getters.getActiveProfile._id)
 
@@ -67,6 +68,21 @@ const cacheEntriesForAllActiveProfileChannels = computed(() => {
 
   activeSubscriptionList.value.forEach((channel) => {
     const cacheEntry = videoCache[channel.id]
+
+    if (cacheEntry != null) {
+      entries.push(cacheEntry)
+    }
+  })
+
+  return entries
+})
+
+const cacheEntriesForAllActiveProfilePlaylists = computed(() => {
+  const playlistCache = store.getters.getPlaylistCache
+  const entries = []
+
+  activePlaylistSubscriptionList.value.forEach((playlist) => {
+    const cacheEntry = playlistCache[playlist.id]
 
     if (cacheEntry != null) {
       entries.push(cacheEntry)
@@ -89,6 +105,20 @@ const videoCacheForAllActiveProfileChannelsPresent = computed(() => {
   })
 })
 
+const videoCacheForAllActiveProfilePlaylistsPresent = computed(() => {
+  if (activePlaylistSubscriptionList.value.length === 0) {
+    return true // No playlists to check
+  }
+
+  if (cacheEntriesForAllActiveProfilePlaylists.value.length < activePlaylistSubscriptionList.value.length) {
+    return false
+  }
+
+  return cacheEntriesForAllActiveProfilePlaylists.value.every((cacheEntry) => {
+    return cacheEntry.videos != null
+  })
+})
+
 const lastVideoRefreshTimestamp = computed(() => {
   // Cache is not ready when data is just loaded from remote
   if (lastRemoteRefreshSuccessTimestamp.value) {
@@ -97,21 +127,33 @@ const lastVideoRefreshTimestamp = computed(() => {
 
   if (
     !videoCacheForAllActiveProfileChannelsPresent.value ||
-     cacheEntriesForAllActiveProfileChannels.value.length === 0
+    !videoCacheForAllActiveProfilePlaylistsPresent.value ||
+     (cacheEntriesForAllActiveProfileChannels.value.length === 0 &&
+      cacheEntriesForAllActiveProfilePlaylists.value.length === 0)
   ) {
     return ''
   }
 
   let minTimestamp = null
+
+  // Check channel cache timestamps
   cacheEntriesForAllActiveProfileChannels.value.forEach((cacheEntry) => {
     if (!minTimestamp || cacheEntry.timestamp.getTime() < minTimestamp.getTime()) {
       minTimestamp = cacheEntry.timestamp
     }
   })
+
+  // Check playlist cache timestamps
+  cacheEntriesForAllActiveProfilePlaylists.value.forEach((cacheEntry) => {
+    if (!minTimestamp || cacheEntry.timestamp.getTime() < minTimestamp.getTime()) {
+      minTimestamp = cacheEntry.timestamp
+    }
+  })
+
   return getRelativeTimeFromDate(minTimestamp.getTime(), true)
 })
 
-watch(activeSubscriptionList, () => {
+watch([activeSubscriptionList, activePlaylistSubscriptionList], () => {
   lastRemoteRefreshSuccessTimestamp.value = null
   isLoading.value = true
   loadVideosFromCacheSometimes()
@@ -158,8 +200,9 @@ function loadVideosFromCacheSometimes() {
   }
 
   // This method is called on view visible
-  if (videoCacheForAllActiveProfileChannelsPresent.value) {
-    loadVideosFromCacheForAllActiveProfileChannels()
+  if (videoCacheForAllActiveProfileChannelsPresent.value &&
+      videoCacheForAllActiveProfilePlaylistsPresent.value) {
+    loadVideosFromCacheForAllActiveProfileChannelsAndPlaylists()
     return
   }
 
@@ -169,99 +212,234 @@ function loadVideosFromCacheSometimes() {
   isLoading.value = false
 }
 
-function loadVideosFromCacheForAllActiveProfileChannels() {
-  const videoList_ = cacheEntriesForAllActiveProfileChannels.value.flatMap((cacheEntry) => {
+function loadVideosFromCacheForAllActiveProfileChannelsAndPlaylists() {
+  const channelVideos = cacheEntriesForAllActiveProfileChannels.value.flatMap((cacheEntry) => {
     return cacheEntry.videos
   })
 
+  const playlistVideos = cacheEntriesForAllActiveProfilePlaylists.value.flatMap((cacheEntry) => {
+    return cacheEntry.videos
+  })
+
+  const videoList_ = [...channelVideos, ...playlistVideos]
   videoList.value = updateVideoListAfterProcessing(videoList_)
   isLoading.value = false
 }
 
 async function loadVideosForSubscriptionsFromRemote() {
-  if (activeSubscriptionList.value.length === 0) {
+  if (activeSubscriptionList.value.length === 0 && activePlaylistSubscriptionList.value.length === 0) {
     isLoading.value = false
     videoList.value = []
     return
   }
 
-  const channelsToLoadFromRemote = activeSubscriptionList.value
-  let channelCount = 0
-  isLoading.value = true
+  const totalItems =
+    activeSubscriptionList.value.length + activePlaylistSubscriptionList.value.length
+  let itemCount = 0
 
   const useRss = useRssFeeds.value
 
+  isLoading.value = true
+  attemptedFetch.value = true
   store.commit('setShowProgressBar', true)
   store.commit('setProgressBarPercentage', 0)
-  attemptedFetch.value = true
-
   errorChannels.value = []
+
   const subscriptionUpdates = []
-  const videoListFromRemote = []
 
-  const processChannel = async (channel) => {
-    let videos, name, thumbnailUrl
+  // Unified fetch helper
+  const fetchItem = async (item, type) => {
+    try {
+      let result = { videos: [], name: '', thumbnailUrl: '' }
 
-    if (!process.env.SUPPORTS_LOCAL_API || backendPreference.value === 'invidious') {
-      if (useRss) {
-        ({ videos, name, thumbnailUrl } = await getChannelVideosInvidiousRSS(channel))
-      } else {
-        ({ videos, name, thumbnailUrl } = await getChannelVideosInvidiousScraper(channel))
+      if (type === 'channel') {
+        if (!process.env.SUPPORTS_LOCAL_API || backendPreference.value === 'invidious') {
+          if (useRss) {
+            result = await getChannelVideosInvidiousRSS(item)
+          } else {
+            result = await getChannelVideosInvidiousScraper(item)
+          }
+        } else {
+          if (useRss) {
+            result = await getChannelVideosLocalRSS(item)
+          } else {
+            result = await getChannelVideosLocalScraper(item)
+          }
+        }
+      } else if (type === 'playlist') {
+        if (!process.env.SUPPORTS_LOCAL_API || backendPreference.value === 'invidious') {
+          result = await getPlaylistVideosInvidiousScraper(item)
+        } else {
+          result = await getPlaylistVideosLocalRSS(item)
+        }
       }
-    } else {
-      if (useRss) {
-        ({ videos, name, thumbnailUrl } = await getChannelVideosLocalRSS(channel))
-      } else {
-        ({ videos, name, thumbnailUrl } = await getChannelVideosLocalScraper(channel))
+
+      // Update caches
+      if (type === 'channel' && result.videos) {
+        store.dispatch('updateSubscriptionVideosCacheByChannel', {
+          channelId: item.id,
+          videos: result.videos
+        })
+      } else if (type === 'playlist' && result.videos) {
+        store.dispatch('updateSubscriptionPlaylistCacheByPlaylist', {
+          playlistId: item.id,
+          videos: result.videos
+        })
       }
+
+      // Update subscription details (channel name + thumbnail)
+      if (result.name || result.thumbnailUrl) {
+        subscriptionUpdates.push({
+          channelId: type === 'channel' ? item.id : undefined,
+          playlistId: type === 'playlist' ? item.id : undefined,
+          channelName: result.name,
+          channelThumbnailUrl: result.thumbnailUrl
+        })
+      }
+      return result.videos ?? []
+    } catch (err) {
+      console.error(`Failed fetching ${type} ${item.id}:`, err)
+      errorChannels.value.push(item)
+      return []
+    } finally {
+      itemCount++
+      store.commit('setProgressBarPercentage', (itemCount / totalItems) * 100)
     }
-
-    channelCount++
-    const percentageComplete = (channelCount / channelsToLoadFromRemote.length) * 100
-    store.commit('setProgressBarPercentage', percentageComplete)
-
-    if (videos != null) {
-      store.dispatch('updateSubscriptionVideosCacheByChannel', {
-        channelId: channel.id,
-        videos: videos
-      })
-    }
-
-    if (name || thumbnailUrl) {
-      subscriptionUpdates.push({
-        channelId: channel.id,
-        channelName: name,
-        channelThumbnailUrl: thumbnailUrl
-      })
-    }
-
-    return videos ?? []
   }
 
+  const itemsToLoadFromRemote = [
+    ...activeSubscriptionList.value.map(channel => ({ item: channel, type: 'channel' })),
+    ...activePlaylistSubscriptionList.value.map(playlist => ({ item: playlist, type: 'playlist' }))
+  ]
+  const allVideos = []
+
   if (useRss) {
-    const results = await Promise.all(channelsToLoadFromRemote.map(processChannel))
-    videoListFromRemote.push(...results.flat())
+    const results = await Promise.all(itemsToLoadFromRemote.map(({ item, type }) => fetchItem(item, type)))
+    allVideos.push(...results.flat())
   } else {
     const CHUNK_SIZE = 80
     const CHUNK_DELAY_MS = 2000
 
-    for (let i = 0; i < channelsToLoadFromRemote.length; i += CHUNK_SIZE) {
+    for (let i = 0; i < itemsToLoadFromRemote.length; i += CHUNK_SIZE) {
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, CHUNK_DELAY_MS))
       }
 
-      const chunk = channelsToLoadFromRemote.slice(i, i + CHUNK_SIZE)
-      const chunkResults = await Promise.all(chunk.map(processChannel))
-      videoListFromRemote.push(...chunkResults.flat())
+      const chunk = itemsToLoadFromRemote.slice(i, i + CHUNK_SIZE)
+      const chunkResults = await Promise.all(chunk.map(({ item, type }) => fetchItem(item, type)))
+      allVideos.push(...chunkResults.flat())
     }
   }
 
-  videoList.value = updateVideoListAfterProcessing(videoListFromRemote)
-  isLoading.value = false
+  // Merge and process all videos
+  // Filter video duplicates that can occur when a video is both in a channel and a playlist subscription,
+  // TODO: maybe this could be done automatically in DB ?
+  const uniqueVideosMap = new Map()
+  allVideos.forEach(video => {
+    if (!uniqueVideosMap.has(video.videoId)) {
+      uniqueVideosMap.set(video.videoId, video)
+    }
+  })
+
+  videoList.value = updateVideoListAfterProcessing([...uniqueVideosMap.values()])
+
   store.commit('setShowProgressBar', false)
+  isLoading.value = false
   lastRemoteRefreshSuccessTimestamp.value = Date.now()
 
+  // Batch update subscription metadata
   store.dispatch('batchUpdateSubscriptionDetails', subscriptionUpdates)
+}
+
+async function getPlaylistVideosLocalScraper(playlist, failedAttempts = 0) {
+  try {
+    const result = await getLocalPlaylist(playlist.id)
+    if (!result || !result.items) throw new Error('No items from local API')
+    return {
+      name: result.title || '',
+      videos: result.items
+        .filter(v => v.type === 'video')
+        .map(video => ({
+          videoId: video.videoId,
+          title: video.title,
+          author: video.author,
+          authorId: video.authorId,
+          published: video.published || Date.now(),
+          publishedText: video.publishedText || '',
+          viewCount: video.viewCount || 0,
+          lengthSeconds: video.lengthSeconds || 0,
+          type: 'video'
+        }))
+    }
+  } catch (err) {
+    console.error(`Local scraper failed for playlist ${playlist.id}:`, err)
+    return await getPlaylistVideosLocalRSS(playlist, failedAttempts + 1)
+  }
+}
+
+async function getPlaylistVideosLocalRSS(playlist, failedAttempts = 0) {
+  const feedUrl = `https://www.youtube.com/feeds/videos.xml?playlist_id=${playlist.id}`
+  try {
+    const response = await fetch(feedUrl)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    return await parseYouTubePlaylistRSSFeed(await response.text(), playlist.id)
+  } catch (err) {
+    console.error(`Local RSS failed for playlist ${playlist.id}:`, err)
+
+    try {
+      return await getPlaylistVideosLocalScraper(playlist, failedAttempts + 1)
+    } catch (err) {
+      console.error(`Local Scrapper failed for playlist ${playlist.id}:`, err)
+      try {
+        showToast(t('Falling back to Invidious API'))
+        return await getPlaylistVideosInvidiousScraper(playlist, failedAttempts + 1)
+      } catch (err) {
+        console.error(`All fallbacks failed for playlist ${playlist.id}:`, err)
+        return { videos: [] }
+      }
+    }
+  }
+}
+
+async function getPlaylistVideosInvidiousScraper(playlist, failedAttempts = 0) {
+  try {
+    const url = `${currentInvidiousInstanceUrl.value}/api/v1/playlists/${playlist.id}`
+    const response = await invidiousFetch(url)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    const json = await response.json()
+    return {
+      name: json.title || '',
+      videos: json.videos.map(video => ({
+        videoId: video.videoId,
+        title: video.title,
+        author: video.author,
+        authorId: video.authorId,
+        published: video.published || Date.now(),
+        publishedText: video.publishedText || '',
+        viewCount: video.viewCount || 0,
+        lengthSeconds: video.lengthSeconds || 0,
+        type: 'video'
+      }))
+    }
+  } catch (err) {
+    console.error(`Invidious scraper failed for playlist ${playlist.id}:`, err)
+    return await getPlaylistVideosInvidiousRSS(playlist, failedAttempts + 1)
+  }
+}
+
+async function getPlaylistVideosInvidiousRSS(playlist, failedAttempts = 0) {
+  const feedUrl = `${currentInvidiousInstanceUrl.value}/feed/playlist/${playlist.id}`
+  try {
+    const response = await invidiousFetch(feedUrl)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+
+    return await parseYouTubePlaylistRSSFeed(await response.text(), playlist.id)
+  } catch (err) {
+    console.error(`Invidious RSS failed for playlist ${playlist.id}:`, err)
+    return { videos: [] }
+  }
 }
 
 async function getChannelVideosLocalScraper(channel, failedAttempts = 0) {
@@ -319,9 +497,6 @@ async function getChannelVideosLocalRSS(channel, failedAttempts = 0) {
     }
 
     if (response.status === 404) {
-      // playlists don't exist if the channel was terminated but also if it doesn't have the tab,
-      // so we need to check the channel feed too before deciding it errored, as that only 404s if the channel was terminated
-
       const response2 = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channel.id}`, {
         method: 'HEAD'
       })
@@ -335,7 +510,7 @@ async function getChannelVideosLocalRSS(channel, failedAttempts = 0) {
       }
     }
 
-    return await parseYouTubeRSSFeed(await response.text(), channel.id)
+    return await parseYouTubeChannelRSSFeed(await response.text(), channel.id)
   } catch (error) {
     console.error(error)
     const errorMessage = t('Local API Error (Click to copy)')
@@ -416,9 +591,6 @@ async function getChannelVideosInvidiousRSS(channel, failedAttempts = 0) {
     const response = await invidiousFetch(feedUrl)
 
     if (response.status === 404) {
-      // playlists don't exist if the channel was terminated but also if it doesn't have the tab,
-      // so we need to check the channel feed too before deciding it errored, as that only 404s if the channel was terminated
-
       const response2 = await fetch(`${currentInvidiousInstanceUrl.value}/feed/channel/${channel.id}`, {
         method: 'GET'
       })
@@ -432,7 +604,7 @@ async function getChannelVideosInvidiousRSS(channel, failedAttempts = 0) {
       }
     }
 
-    return await parseYouTubeRSSFeed(await response.text(), channel.id)
+    return await parseYouTubeChannelRSSFeed(await response.text(), channel.id)
   } catch (error) {
     console.error(error)
     const errorMessage = t('Invidious API Error (Click to copy)')

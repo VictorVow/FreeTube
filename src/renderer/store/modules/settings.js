@@ -693,6 +693,25 @@ const customActions = {
             console.error('subscription-cache: invalid sync event received')
         }
       })
+      window.ftElectron.handleSyncSubscriptionPlaylistCache((event, data) => {
+        switch (event) {
+          case SyncEvents.SUBSCRIPTION_PLAYLIST_CACHE.UPDATE_VIDEOS_BY_PLAYLIST:
+            commit('updatePlaylistCacheByPlaylist', data)
+            break
+
+          case SyncEvents.GENERAL.DELETE_MULTIPLE:
+            commit('clearCachesForManyPlaylists', data)
+            break
+
+          case SyncEvents.GENERAL.DELETE_ALL:
+            // The clearCaches mutation already handles clearing the playlist cache
+            commit('clearCaches')
+            break
+
+          default:
+            console.error('subscription-playlist-cache: invalid sync event received')
+        }
+      })
     }
   }
 }

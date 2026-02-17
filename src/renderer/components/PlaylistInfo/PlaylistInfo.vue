@@ -102,7 +102,6 @@
     >
       {{ description }}
     </p>
-
     <hr class="playlistInfoSeparator">
 
     <div
@@ -127,106 +126,6 @@
           {{ channelName }}
         </h3>
       </component>
-
-      <div class="playlistOptionsAndSearch">
-        <div class="playlistOptions">
-          <template
-            v-if="editMode"
-          >
-            <FtIconButton
-              :title="$t('User Playlists.Save Changes')"
-              :disabled="playlistPersistenceDisabled"
-              :icon="['fas', 'save']"
-              theme="secondary"
-              @click="savePlaylistInfo"
-            />
-            <FtIconButton
-              :title="$t('User Playlists.Cancel')"
-              :icon="['fas', 'times']"
-              theme="secondary"
-              @click="exitEditMode"
-            />
-          </template>
-          <template
-            v-else-if="isUserPlaylist"
-          >
-            <FtIconButton
-              :title="markedAsQuickBookmarkTarget ? $t('User Playlists.Quick Bookmark Enabled') : $t('User Playlists.Enable Quick Bookmark With This Playlist')"
-              :icon="markedAsQuickBookmarkTarget ? ['fas', 'bookmark'] : ['far', 'bookmark']"
-              :disabled="markedAsQuickBookmarkTarget"
-              :theme="markedAsQuickBookmarkTarget ? 'secondary' : 'base-no-default'"
-              @disabled-click="handleQuickBookmarkEnabledDisabledClick"
-              @click="enableQuickBookmarkForThisPlaylist"
-            />
-            <FtIconButton
-              :title="$t('User Playlists.Edit Playlist Info')"
-              :icon="['fas', 'edit']"
-              theme="secondary"
-              @click="enterEditMode"
-            />
-          </template>
-          <FtIconButton
-            v-if="videoCount > 0 && showPlaylists && !editMode"
-            :title="$t('User Playlists.Copy Playlist')"
-            :icon="['fas', 'copy']"
-            theme="secondary"
-            @click="toggleCopyVideosPrompt"
-          />
-          <FtIconButton
-            v-if="exportPlaylistButtonVisible"
-            :title="$t('User Playlists.Export Playlist')"
-            :icon="['fas', 'file-arrow-down']"
-            theme="secondary"
-            @click="showExportPrompt = true"
-          />
-          <FtIconButton
-            v-if="!editMode && userPlaylistDuplicateItemCount > 0"
-            :title="$t('User Playlists.Remove Duplicate Videos')"
-            :icon="['fas', 'users-slash']"
-            theme="destructive"
-            @click="showRemoveDuplicateVideosPrompt = true"
-          />
-          <FtIconButton
-            v-if="!editMode && userPlaylistAnyVideoWatched"
-            :title="$t('User Playlists.Remove Watched Videos')"
-            :icon="['fas', 'eye-slash']"
-            theme="destructive"
-            @click="showRemoveVideosOnWatchPrompt = true"
-          />
-          <FtIconButton
-            v-if="deletePlaylistButtonVisible"
-            :disabled="markedAsQuickBookmarkTarget"
-            :title="!markedAsQuickBookmarkTarget ? $t('User Playlists.Delete Playlist') : playlistDeletionDisabledLabel"
-            :icon="['fas', 'trash']"
-            theme="destructive"
-            @disabled-click="handlePlaylistDeleteDisabledClick"
-            @click="showDeletePlaylistPrompt = true"
-          />
-          <FtShareButton
-            v-if="sharePlaylistButtonVisible"
-            :id="id"
-            class="sharePlaylistIcon"
-            :dropdown-position-y="description ? 'top' : 'bottom'"
-            share-target-type="Playlist"
-          />
-        </div>
-        <div
-          v-if="searchVideoModeAllowed"
-          class="searchInputsRow"
-        >
-          <FtInput
-            ref="searchInput"
-            class="inputElement"
-            :placeholder="$t('User Playlists.SinglePlaylistView.Search for Videos')"
-            :show-clear-text-button="true"
-            :show-action-button="false"
-            :value="query"
-            :maxlength="255"
-            @input="updateQueryDebounced"
-            @clear="updateQueryDebounced('')"
-          />
-        </div>
-      </div>
       <FtPrompt
         v-if="showDeletePlaylistPrompt"
         :label="$t('User Playlists.Are you sure you want to delete this playlist? This cannot be undone')"
@@ -259,6 +158,116 @@
         @click="handleExport"
       />
     </div>
+
+    <hr class="playlistInfoSeparator">
+
+    <div class="playlistOptionsAndSearch">
+      <div class="playlistOptions">
+        <template
+          v-if="editMode"
+        >
+          <FtIconButton
+            :title="$t('User Playlists.Save Changes')"
+            :disabled="playlistPersistenceDisabled"
+            :icon="['fas', 'save']"
+            theme="secondary"
+            @click="savePlaylistInfo"
+          />
+          <FtIconButton
+            :title="$t('User Playlists.Cancel')"
+            :icon="['fas', 'times']"
+            theme="secondary"
+            @click="exitEditMode"
+          />
+        </template>
+        <template
+          v-else-if="isUserPlaylist"
+        >
+          <FtIconButton
+            :title="markedAsQuickBookmarkTarget ? $t('User Playlists.Quick Bookmark Enabled') : $t('User Playlists.Enable Quick Bookmark With This Playlist')"
+            :icon="markedAsQuickBookmarkTarget ? ['fas', 'bookmark'] : ['far', 'bookmark']"
+            :disabled="markedAsQuickBookmarkTarget"
+            :theme="markedAsQuickBookmarkTarget ? 'secondary' : 'base-no-default'"
+            @disabled-click="handleQuickBookmarkEnabledDisabledClick"
+            @click="enableQuickBookmarkForThisPlaylist"
+          />
+          <FtIconButton
+            :title="$t('User Playlists.Edit Playlist Info')"
+            :icon="['fas', 'edit']"
+            theme="secondary"
+            @click="enterEditMode"
+          />
+        </template>
+        <FtIconButton
+          v-if="videoCount > 0 && showPlaylists && !editMode"
+          :title="$t('User Playlists.Copy Playlist')"
+          :icon="['fas', 'copy']"
+          theme="secondary"
+          @click="toggleCopyVideosPrompt"
+        />
+        <FtIconButton
+          v-if="exportPlaylistButtonVisible"
+          :title="$t('User Playlists.Export Playlist')"
+          :icon="['fas', 'file-arrow-down']"
+          theme="secondary"
+          @click="showExportPrompt = true"
+        />
+        <FtIconButton
+          v-if="!editMode && userPlaylistDuplicateItemCount > 0"
+          :title="$t('User Playlists.Remove Duplicate Videos')"
+          :icon="['fas', 'users-slash']"
+          theme="destructive"
+          @click="showRemoveDuplicateVideosPrompt = true"
+        />
+        <FtIconButton
+          v-if="!editMode && userPlaylistAnyVideoWatched"
+          :title="$t('User Playlists.Remove Watched Videos')"
+          :icon="['fas', 'eye-slash']"
+          theme="destructive"
+          @click="showRemoveVideosOnWatchPrompt = true"
+        />
+        <FtIconButton
+          v-if="deletePlaylistButtonVisible"
+          :disabled="markedAsQuickBookmarkTarget"
+          :title="!markedAsQuickBookmarkTarget ? $t('User Playlists.Delete Playlist') : playlistDeletionDisabledLabel"
+          :icon="['fas', 'trash']"
+          theme="destructive"
+          @disabled-click="handlePlaylistDeleteDisabledClick"
+          @click="showDeletePlaylistPrompt = true"
+        />
+        <FtShareButton
+          v-if="sharePlaylistButtonVisible"
+          :id="id"
+          class="sharePlaylistIcon"
+          :dropdown-position-y="description ? 'top' : 'bottom'"
+          share-target-type="Playlist"
+        />
+        <div class="subscribeListWrapper">
+          <FtSubscribeListButton
+            v-if="!editMode && !isUserPlaylist"
+            :list-id="id"
+            :list-name="title"
+            :list-thumbnail="thumbnail"
+          />
+        </div>
+      </div>
+      <div
+        v-if="searchVideoModeAllowed"
+        class="searchInputsRow"
+      >
+        <FtInput
+          ref="searchInput"
+          class="inputElement"
+          :placeholder="$t('User Playlists.SinglePlaylistView.Search for Videos')"
+          :show-clear-text-button="true"
+          :show-action-button="false"
+          :value="query"
+          :maxlength="255"
+          @input="updateQueryDebounced"
+          @clear="updateQueryDebounced('')"
+        />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -272,6 +281,7 @@ import FtIconButton from '../FtIconButton/FtIconButton.vue'
 import FtInput from '../FtInput/FtInput.vue'
 import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import FtShareButton from '../FtShareButton/FtShareButton.vue'
+import FtSubscribeListButton from '../FtSubscribeListButton/FtSubscribeListButton.vue'
 
 import store from '../../store/index'
 

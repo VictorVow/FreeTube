@@ -9,7 +9,8 @@ const state = {
     name: 'All Channels',
     bgColor: '#000000',
     textColor: '#FFFFFF',
-    subscriptions: []
+    subscriptions: [],
+    listSubscriptions: [],
   }],
   activeProfile: MAIN_PROFILE_ID
 }
@@ -35,6 +36,12 @@ const getters = {
     const mainProfile = state.profileList[0]
 
     return mainProfile.subscriptions.reduce((set, channel) => set.add(channel.id), new Set())
+  },
+
+  getSubscribedPlaylistIdSet: (state, getters) => {
+    const activeProfile = getters.getActiveProfile
+    const playlistIds = (activeProfile.listSubscriptions || []).map(list => list.id)
+    return new Set(playlistIds)
   },
 }
 
@@ -67,6 +74,17 @@ const actions = {
 
     if (!Array.isArray(profiles)) return
 
+    // Migration for old profiles that may not have the listSubscriptions fields
+    profiles = profiles.map(profile => ({
+      ...profile,
+      subscriptions: Array.isArray(profile.subscriptions)
+        ? profile.subscriptions.filter(Boolean)
+        : [],
+      listSubscriptions: Array.isArray(profile.listSubscriptions)
+        ? profile.listSubscriptions.filter(Boolean)
+        : []
+    }))
+
     if (profiles.length === 0) {
       // Create a default profile and persist it
       const randomColor = getRandomColor().value
@@ -76,7 +94,8 @@ const actions = {
         name: defaultName,
         bgColor: randomColor,
         textColor: textColor,
-        subscriptions: []
+        subscriptions: [],
+        listSubscriptions: [],
       }
 
       try {
@@ -223,6 +242,15 @@ const actions = {
     }
   },
 
+  async addListToProfiles({ commit }, { list, profileIds }) {
+    try {
+      await DBProfileHandlers.addListToProfiles(list, profileIds)
+      commit('addListToProfiles', { list, profileIds })
+    } catch (errMessage) {
+      console.error(errMessage)
+    }
+  },
+
   async addChannelToProfiles({ commit }, { channel, profileIds }) {
     // If this is an Invidious URL, convert it to a YouTube one
     if (!channel.thumbnail.startsWith('https://yt3.googleusercontent.com/')) {
@@ -232,6 +260,15 @@ const actions = {
     try {
       await DBProfileHandlers.addChannelToProfiles(channel, profileIds)
       commit('addChannelToProfiles', { channel, profileIds })
+    } catch (errMessage) {
+      console.error(errMessage)
+    }
+  },
+
+  async removeListFromProfiles({ commit }, { listId, profileIds }) {
+    try {
+      await DBProfileHandlers.removeListFromProfiles(listId, profileIds)
+      commit('removeListFromProfiles', { listId, profileIds })
     } catch (errMessage) {
       console.error(errMessage)
     }
@@ -286,6 +323,31 @@ const mutations = {
     }
 
     state.profileList.sort(profileSort)
+  },
+
+  addListToProfiles(state, { list, profileIds }) {
+    for (const id of profileIds) {
+      const profile = state.profileList.find(p => p._id === id)
+      if (!profile) continue
+
+      if (!Array.isArray(profile.listSubscriptions)) {
+        profile.listSubscriptions = []
+      }
+
+      profile.listSubscriptions.push(list)
+    }
+  },
+
+  removeListFromProfiles(state, { listId, profileIds }) {
+    for (const id of profileIds) {
+      const profile = state.profileList.find(p => p._id === id)
+
+      if (!profile.listSubscriptions) continue
+
+      profile.listSubscriptions = profile.listSubscriptions.filter(
+        list => list.id !== listId
+      )
+    }
   },
 
   addChannelToProfiles(state, { channel, profileIds }) {

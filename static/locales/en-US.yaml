@@ -1052,6 +1052,11 @@ Playlist:
   View Full Playlist: View Full Playlist
   Last Updated On: Last Updated On
   Unavailable videos are hidden: Unavailable videos are hidden
+  Subscribe: Subscribe
+  Unsubscribe: Unsubscribe
+  Unsubscribe Prompt: Are you sure you want to unsubscribe from "{listName}"?
+  List added: Playlist added to your subscriptions
+  List removed: Playlist removed from your subscriptions
   Sort By:
     DateAddedNewest: Date added (Newest)
     DateAddedOldest: Date added (Oldest)
