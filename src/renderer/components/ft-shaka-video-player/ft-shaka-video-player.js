@@ -1014,6 +1014,8 @@ export default defineComponent({
             mouseScrollSkipHandler(event)
           }
         }
+      } else if (event.target.closest('.shaka-overflow-menu-button')) {
+        mouseScrollPlaybackRateHandler(event)
       }
     }
 
@@ -1039,9 +1041,7 @@ export default defineComponent({
       controlsContainer.removeEventListener('click', handleControlsContainerClick, true)
 
       if (!useVrMode.value) {
-        if (videoVolumeMouseScroll.value || videoSkipMouseScroll.value || videoPlaybackRateMouseScroll.value) {
-          controlsContainer.addEventListener('wheel', handleControlsContainerWheel)
-        }
+        controlsContainer.addEventListener('wheel', handleControlsContainerWheel)
 
         if (videoPlaybackRateMouseScroll.value) {
           controlsContainer.addEventListener('click', handleControlsContainerClick, true)
@@ -2156,9 +2156,9 @@ export default defineComponent({
      */
     function mouseScrollPlaybackRate(event) {
       if ((event.deltaY < 0 || event.deltaX > 0)) {
-        changePlayBackRate(0.05)
+        changePlayBackRate(videoPlaybackRateInterval.value)
       } else if ((event.deltaY > 0 || event.deltaX < 0)) {
-        changePlayBackRate(-0.05)
+        changePlayBackRate(-videoPlaybackRateInterval.value)
       }
     }
     const mouseScrollPlaybackRateThrottle = throttle(mouseScrollPlaybackRate, mouseScrollThrottleWaitMs)
