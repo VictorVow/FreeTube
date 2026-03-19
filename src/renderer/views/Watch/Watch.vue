@@ -4,7 +4,8 @@
     :class="{
       isLoading,
       useTheatreMode: useTheatreMode && !isLoading,
-      noSidebar: !theatrePossible
+      noSidebar: !theatrePossible,
+      swapWatchPageSections
     }"
   >
     <ft-loader
@@ -128,7 +129,7 @@
     />
     <div
       v-if="(isFamilyFriendly || !showFamilyFriendlyOnly)"
-      class="infoArea"
+      class="videoInfoArea"
     >
       <watch-video-info
         v-if="!isLoading"
@@ -162,6 +163,18 @@
         @save-watched-progress="handleWatchProgressManualSave"
         @reload-player="onManualReloadRequested"
       />
+      <watch-video-description
+        v-if="swapWatchPageSections && !isLoading && !hideVideoDescription && contentDisclosures?.length > 0"
+        :content-disclosures="contentDisclosures"
+        :disclosure-only="true"
+        class="watchVideo"
+        :class="{ theatreWatchVideo: useTheatreMode }"
+      />
+    </div>
+    <div
+      v-if="(isFamilyFriendly || !showFamilyFriendlyOnly)"
+      class="infoArea"
+    >
       <watch-video-chapters
         v-if="!hideChapters && !isLoading && videoChapters.length > 0"
         :chapters="videoChapters"

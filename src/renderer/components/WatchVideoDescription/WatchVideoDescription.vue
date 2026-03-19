@@ -1,6 +1,6 @@
 <template>
   <FtCard
-    v-if="shownDescription.length > 0 || showHowThisWasMade"
+    v-if="!disclosureOnly && (shownDescription.length > 0 || (showHowThisWasMade && !swapWatchPageSections))"
     :class="{ videoDescription: true, short: !showFullDescription }"
   >
     <span
@@ -23,7 +23,7 @@
       @click="expandDescriptionWithClick"
     />
     <div
-      v-if="showHowThisWasMade && showFullDescription"
+      v-if="showHowThisWasMade && showFullDescription && !swapWatchPageSections && !disclosureOnly"
       class="contentDisclosureSection"
     >
       <div class="contentDisclosureTitle">
@@ -68,6 +68,35 @@
       {{ $t("Description.Collapse Description") }}
     </span>
   </FtCard>
+  <FtCard
+    v-if="disclosureOnly && showHowThisWasMade"
+    class="contentDisclosureCard"
+  >
+    <div class="contentDisclosureTitle">
+      {{ t('Video.How this was made') }}
+    </div>
+    <div
+      v-for="(item, index) in contentDisclosures"
+      :key="index"
+      class="contentDisclosureItem"
+    >
+      <div class="contentDisclosureHeader">
+        {{ item.label }}
+      </div>
+      <div
+        v-if="item.description"
+        class="contentDisclosureBody"
+      >
+        {{ item.description }}
+      </div>
+      <div
+        v-if="item.attribution"
+        class="contentDisclosureAttribution"
+      >
+        {{ item.attribution }}
+      </div>
+    </div>
+  </FtCard>
 </template>
 
 <script setup>
@@ -75,6 +104,7 @@ import autolinker from 'autolinker'
 
 import { onMounted, ref, computed, useTemplateRef } from 'vue'
 import { useI18n } from 'vue-i18n'
+import store from '../../store'
 import FtCard from '../ft-card/ft-card.vue'
 import FtTimestampCatcher from '../FtTimestampCatcher.vue'
 
@@ -94,10 +124,16 @@ const props = defineProps({
   contentDisclosures: {
     type: Array,
     default: null
+  },
+  disclosureOnly: {
+    type: Boolean,
+    default: false
   }
 })
 
 const { t } = useI18n()
+
+const swapWatchPageSections = computed(() => store.getters.getSwapWatchPageSections)
 
 const showHowThisWasMade = computed(() => (props.contentDisclosures?.length ?? 0) > 0)
 
