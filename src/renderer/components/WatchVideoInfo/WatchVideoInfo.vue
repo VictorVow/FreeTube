@@ -100,9 +100,16 @@
             @click="togglePlaylistPrompt"
           />
           <FtIconButton
+            v-if="firstNonQuickBookmarkPlaylistContainingVideo"
+            :title="t('User Playlists.Remove from Named Playlist', { playlistName: firstNonQuickBookmarkPlaylistContainingVideo.playlistName })"
+            :icon="['fas', 'bookmark']"
+            theme="base favorite"
+            @click="removeFromNonQuickBookmarkPlaylist"
+          />
+          <FtIconButton
             v-if="isQuickBookmarkEnabled"
             :title="quickBookmarkIconText"
-            :icon="isInQuickBookmarkPlaylist ? ['fas', 'check'] : ['fas', 'bookmark']"
+            :icon="isInQuickBookmarkPlaylist ? ['fas', 'heart'] : ['far', 'heart']"
             class="quickBookmarkVideoIcon"
             :class="{
               bookmarked: isInQuickBookmarkPlaylist,
@@ -453,6 +460,15 @@ const quickBookmarkPlaylist = computed(() => store.getters.getQuickBookmarkPlayl
 
 const isQuickBookmarkEnabled = computed(() => quickBookmarkPlaylist.value != null)
 
+const firstNonQuickBookmarkPlaylistContainingVideo = computed(() => {
+  const id = props.id
+  const quickBookmarkId = quickBookmarkPlaylist.value?._id
+  return store.getters.getAllPlaylists.find((playlist) => {
+    if (playlist._id === quickBookmarkId) { return false }
+    return playlist.videos.some((video) => video.videoId === id)
+  }) ?? null
+})
+
 const isInQuickBookmarkPlaylist = computed(() => {
   if (!isQuickBookmarkEnabled.value) { return false }
 
@@ -525,6 +541,16 @@ function removeFromQuickBookmarkPlaylist() {
 }
 
 const enableChannelLinks = computed(() => !store.getters.getDisableChannelLinks)
+
+function removeFromNonQuickBookmarkPlaylist() {
+  const playlist = firstNonQuickBookmarkPlaylistContainingVideo.value
+  if (!playlist) { return }
+  store.dispatch('removeVideo', {
+    _id: playlist._id,
+    videoId: props.id,
+  })
+  showToast(t('Video.Video has been removed from your saved list'))
+}
 </script>
 
 <style scoped src="./WatchVideoInfo.css" />
