@@ -25,6 +25,7 @@ import {
   showToast
 } from '../../helpers/utils'
 import {
+  getAccountCookie,
   getLocalVideoInfo,
   mapLocalLegacyFormat,
   parseLocalSubscriberCount,
@@ -507,7 +508,15 @@ export default defineComponent({
       }
 
       try {
-        const videoInfo = await getLocalVideoInfo(this.videoId)
+        let accountCookie
+        if (this.$store.getters.getUseAccountCookies) {
+          accountCookie = await getAccountCookie({
+            browser: this.$store.getters.getAccountCookiesBrowser,
+            profile: this.$store.getters.getAccountCookiesProfile
+          })
+        }
+
+        const videoInfo = await getLocalVideoInfo(this.videoId, accountCookie)
         const { info: result, poToken, clientInfo, adEndTimeUnixMs, contentDisclosures } = videoInfo
         this.contentDisclosures = contentDisclosures || null
 

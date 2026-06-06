@@ -70,8 +70,9 @@ if (process.env.SUPPORTS_LOCAL_API) {
  * @param {import('youtubei.js').ClientType} options.clientType use an alterate client
  * @param {boolean} options.generateSessionLocally generate the session locally or let YouTube generate it (local is faster, remote is more accurate)
  * @param {?import('youtubei.js').Types.FetchFunction} options.fetchFunc optional custom fetch function
+ * @param {string|undefined} options.cookie optional YouTube account cookie string, used to make authenticated requests (so signed-in-only videos can play)
  */
-async function createSession({ withPlayer = false, location = undefined, safetyMode = false, clientType = undefined, generateSessionLocally = true, fetchFunc = null } = {}) {
+async function createSession({ withPlayer = false, location = undefined, safetyMode = false, clientType = undefined, generateSessionLocally = true, fetchFunc = null, cookie = undefined } = {}) {
   let cache
   if (withPlayer) {
     if (process.env.IS_ELECTRON) {
@@ -96,7 +97,11 @@ async function createSession({ withPlayer = false, location = undefined, safetyM
     // use browser fetch
     fetch: (fetchFunc ?? ((input, init) => fetch(input, init))),
     cache,
-    generate_session_locally: !!generateSessionLocally
+    generate_session_locally: !!generateSessionLocally,
+
+    // when set, youtube.js makes authenticated requests and derives the
+    // `Authorization: SAPISIDHASH` header from the SAPISID cookie
+    cookie
   })
 }
 
@@ -107,6 +112,63 @@ async function createSession({ withPlayer = false, location = undefined, safetyM
 async function createInnertube(options = {}) {
   const session = await createSession(options)
   return new Innertube(session)
+}
+
+/**
+ * Cached YouTube account cookie string for the current app session. Imported from the
+ * user's browser (via the main process) and only used when the account cookies feature
+ * is enabled. Kept in memory only - never persisted to the settings database.
+ * @type {string|null}
+ */
+let cachedAccountCookie = null
+
+/**
+ * (Re)imports the YouTube account cookies from the configured browser/profile, injecting
+ * them into the session cookie jar (main process) and caching the cookie string for
+ * subsequent authenticated video requests.
+ * @param {{ browser?: string, profile?: string }} options
+ * @returns {Promise<{ profileName: string|null, cookieString: string, count: number, hasAuth: boolean }|null>}
+ */
+export async function refreshAccountCookies({ browser = 'firefox', profile } = {}) {
+  if (!process.env.IS_ELECTRON) {
+    return null
+  }
+
+  const result = await window.ftElectron.getBrowserCookies({ browser, profile })
+  cachedAccountCookie = result?.cookieString || null
+  return result
+}
+
+/**
+ * Clears the cached account cookie string and removes the imported cookies from the
+ * session cookie jar, returning the local API to anonymous behaviour.
+ * @returns {Promise<void>}
+ */
+export async function clearAccountCookies() {
+  cachedAccountCookie = null
+
+  if (process.env.IS_ELECTRON) {
+    await window.ftElectron.clearBrowserCookies()
+  }
+}
+
+/**
+ * Resolves the account cookie string to use for an authenticated video request,
+ * importing it on first use during the app session.
+ * @param {{ browser?: string, profile?: string }} options
+ * @returns {Promise<string|null>}
+ */
+export async function getAccountCookie({ browser = 'firefox', profile } = {}) {
+  if (!process.env.IS_ELECTRON) {
+    return null
+  }
+
+  if (cachedAccountCookie) {
+    return cachedAccountCookie
+  }
+
+  const result = await refreshAccountCookies({ browser, profile })
+  return result?.cookieString || null
 }
 
 /** @type {Innertube | null} */
@@ -437,8 +499,9 @@ async function getHTMLPage(url, kind) {
 /**
  * @param {string} videoId
  * @param {(input, init) => Promise<Response>} fetchFunc
+ * @param {string|undefined} cookie optional YouTube account cookie string, used to make authenticated requests (so signed-in-only videos can play)
  */
-async function getWatchHTMLWatchPage(videoId, fetchFunc) {
+async function getWatchHTMLWatchPage(videoId, fetchFunc, cookie = undefined) {
   let htmlPage, ytConfig, initialAttestationData
 
   let playerResponse, nextResponse
@@ -487,7 +550,7 @@ async function getWatchHTMLWatchPage(videoId, fetchFunc) {
     }
   }
 
-  const session = buildSessionFromYtConfig(ytConfig, fetchFunc)
+  const session = buildSessionFromYtConfig(ytConfig, fetchFunc, cookie)
 
   return {
     ytConfig,
@@ -502,8 +565,9 @@ async function getWatchHTMLWatchPage(videoId, fetchFunc) {
 /**
  * @param {object} ytConfig
  * @param {(input, init) => Promise<Response>} fetchFunc
+ * @param {string|undefined} cookie optional YouTube account cookie string, used to make authenticated requests (so signed-in-only videos can play)
  */
-function buildSessionFromYtConfig(ytConfig, fetchFunc) {
+function buildSessionFromYtConfig(ytConfig, fetchFunc, cookie = undefined) {
   const context = deepCopy(ytConfig.INNERTUBE_CONTEXT)
 
   if (context.clickTracking) {
@@ -537,7 +601,7 @@ function buildSessionFromYtConfig(ytConfig, fetchFunc) {
 
   return new Session(
     context, ytConfig.INNERTUBE_API_KEY, ytConfig.INNERTUBE_API_VERSION,
-    0, undefined, undefined, undefined, fetchFunc
+    0, undefined, undefined, cookie, fetchFunc
   )
 }
 
@@ -555,7 +619,7 @@ function buildSessionFromYtConfig(ytConfig, fetchFunc) {
  *   adEndTimeUnixMs: number
  * }>}
  */
-export async function getLocalVideoInfo(id) {
+export async function getLocalVideoInfo(id, cookie = undefined) {
   let responseTime
   let totalAdTimeMilliseconds = 0
 
@@ -581,7 +645,7 @@ export async function getLocalVideoInfo(id) {
     })
   }
 
-  const htmlExtracts = await getWatchHTMLWatchPage(id, fetchFunc)
+  const htmlExtracts = await getWatchHTMLWatchPage(id, fetchFunc, cookie)
   responseTime = Date.now()
 
   const player = await Player.create(
@@ -667,7 +731,7 @@ export async function getLocalVideoInfo(id) {
     (hasTrailer && trailerIsAgeRestricted)
   ) {
     try {
-      const webEmbeddedInnertube = await createInnertube({ clientType: ClientType.WEB_EMBEDDED })
+      const webEmbeddedInnertube = await createInnertube({ clientType: ClientType.WEB_EMBEDDED, cookie })
       webEmbeddedInnertube.session.context.client.visitorData = context.client.visitorData
 
       const videoId = hasTrailer && trailerIsAgeRestricted ? info.playability_status.error_screen.video_id : id
