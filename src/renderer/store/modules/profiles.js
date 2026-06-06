@@ -223,7 +223,7 @@ const actions = {
     }
   },
 
-  async addChannelToProfiles({ commit }, { channel, profileIds }) {
+  async addChannelToProfiles({ commit, dispatch }, { channel, profileIds }) {
     // If this is an Invidious URL, convert it to a YouTube one
     if (!channel.thumbnail.startsWith('https://yt3.googleusercontent.com/')) {
       channel.thumbnail = channel.thumbnail.replace(/^https?:\/\/[^/]+\/ggpht/, 'https://yt3.googleusercontent.com')
@@ -232,15 +232,20 @@ const actions = {
     try {
       await DBProfileHandlers.addChannelToProfiles(channel, profileIds)
       commit('addChannelToProfiles', { channel, profileIds })
+      // Re-subscribing clears any tombstone so the union merge lets it back in.
+      dispatch('watchSyncRetractChannel', { channelId: channel.id, profileIds })
     } catch (errMessage) {
       console.error(errMessage)
     }
   },
 
-  async removeChannelFromProfiles({ commit }, { channelId, profileIds }) {
+  async removeChannelFromProfiles({ commit, dispatch }, { channelId, profileIds }) {
     try {
       await DBProfileHandlers.removeChannelFromProfiles(channelId, profileIds)
       commit('removeChannelFromProfiles', { channelId, profileIds })
+      // Tell the server to tombstone the channel so the union merge can't
+      // resurrect it on the next sync. Non-fatal if it fails.
+      dispatch('watchSyncRemoveChannel', { channelId, profileIds })
     } catch (errMessage) {
       console.error(errMessage)
     }
