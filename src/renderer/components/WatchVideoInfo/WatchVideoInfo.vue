@@ -135,6 +135,15 @@
           />
           <FtIconButton
             v-if="USING_ELECTRON"
+            class="proxyButton"
+            :class="{ inactive: !useProxy }"
+            :title="proxyButtonTitle"
+            :icon="['fas', 'network-wired']"
+            :theme="useProxy ? 'primary' : 'secondary'"
+            @click="toggleProxy"
+          />
+          <FtIconButton
+            v-if="USING_ELECTRON"
             class="accountCookiesButton"
             :class="{ inactive: !useAccountCookies }"
             :title="accountCookiesButtonTitle"
@@ -388,6 +397,31 @@ const swapWatchPageSections = computed(() => store.getters.getSwapWatchPageSecti
 
 function toggleSwapWatchPageSections() {
   store.dispatch('updateSwapWatchPageSections', !swapWatchPageSections.value)
+}
+
+/** @type {import('vue').ComputedRef<boolean>} */
+const useProxy = computed(() => store.getters.getUseProxy)
+
+const proxyUrl = computed(() => {
+  return `${store.getters.getProxyProtocol}://${store.getters.getProxyHostname}:${store.getters.getProxyPort}`
+})
+
+const proxyButtonTitle = computed(() => {
+  return useProxy.value
+    ? t('Settings.Proxy Settings.Toggle On')
+    : t('Settings.Proxy Settings.Toggle Off')
+})
+
+function toggleProxy() {
+  if (process.env.IS_ELECTRON) {
+    if (useProxy.value) {
+      window.ftElectron.disableProxy()
+    } else {
+      window.ftElectron.enableProxy(proxyUrl.value)
+    }
+  }
+
+  store.dispatch('updateUseProxy', !useProxy.value)
 }
 
 /** @type {import('vue').ComputedRef<boolean>} */
