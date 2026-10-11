@@ -158,6 +158,15 @@
   background-color: #696969;
 }
 
+/* Grey out the proxy toggle when the proxy is off. */
+.proxyButton.inactive :deep(.iconButton.secondary) {
+  background-color: #808080;
+}
+
+.proxyButton.inactive :deep(.iconButton.secondary:hover) {
+  background-color: #696969;
+}
+
 /* Grey out the account cookies toggle when authenticated playback is off. */
 .accountCookiesButton.inactive :deep(.iconButton.secondary) {
   background-color: #808080;
