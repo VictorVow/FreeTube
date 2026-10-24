@@ -10,6 +10,7 @@ import {
   deepCopy,
   escapeHTML,
   extractNumberFromString,
+  formatDurationAsTimestamp,
   getChannelPlaylistId,
   getRelativeTimeFromDate,
 } from '../utils'
@@ -834,6 +835,159 @@ export async function getLocalVideoInfo(id, cookie = undefined) {
     clientInfo,
     adEndTimeUnixMs,
     contentDisclosures: extractLocalContentDisclosures(info),
+  }
+}
+
+/**
+ * Checks whether a video has a transcript (caption tracks), without making extra requests
+ * @param {import('youtubei.js').YT.VideoInfo} info
+ * @returns {boolean}
+ */
+export function hasLocalTranscript(info) {
+  return (info?.captions?.caption_tracks?.length ?? 0) > 0
+}
+
+/**
+ * @typedef {object} LocalTranscript
+ * @property {LocalTranscriptSegment[]} segments
+ * @property {{code: string, name: string}[]} languages
+ * @property {string} selectedLanguage the language_code of the track the segments came from
+ */
+
+/**
+ * @typedef {object} LocalTranscriptSegment
+ * @property {number} startMs
+ * @property {string} text
+ * @property {string} timestamp
+ */
+
+/**
+ * Decodes the HTML entities YouTube puts in timedtext responses
+ * @param {string} text
+ * @returns {string}
+ */
+function decodeTimedTextEntities(text) {
+  return text
+    .replaceAll('&#39;', "'")
+    .replaceAll('&apos;', "'")
+    .replaceAll('&quot;', '"')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&nbsp;', ' ')
+    .replaceAll(/&#(\d+);/g, (_, num) => String.fromCharCode(parseInt(num, 10)))
+    .replaceAll('&amp;', '&')
+}
+
+/**
+ * Parses a timedtext XML response into transcript segments.
+ * Handles both the `<text start dur>` (web) and `<p t d>` (android/srv3) formats.
+ * @param {string} xml
+ * @returns {LocalTranscriptSegment[]}
+ */
+function parseTimedTextXml(xml) {
+  const segments = []
+  const tagRegex = /<(?:text|p)\s+([^>]*)>([\s\S]*?)<\/(?:text|p)>/g
+  const attrRegex = /(start|t|dur|d)="([\d.]+)"/g
+
+  let match
+  while ((match = tagRegex.exec(xml)) !== null) {
+    const attrs = match[1]
+    const rawText = match[2]
+
+    let startMs
+    let attrMatch
+    attrRegex.lastIndex = 0
+    while ((attrMatch = attrRegex.exec(attrs)) !== null) {
+      const name = attrMatch[1]
+      const value = parseFloat(attrMatch[2])
+      if (name === 'start' || name === 't') {
+        startMs = name === 't' ? value : value * 1000
+      }
+    }
+
+    if (startMs === undefined) { continue }
+
+    const text = decodeTimedTextEntities(rawText.replaceAll(/<[^>]*>/g, '')).trim()
+    if (!text) { continue }
+
+    segments.push({ startMs, text })
+  }
+
+  segments.sort((a, b) => a.startMs - b.startMs)
+
+  for (const segment of segments) {
+    segment.timestamp = formatDurationAsTimestamp(Math.floor(segment.startMs / 1000))
+  }
+
+  return segments
+}
+
+/**
+ * Fetches the transcript for a video via its caption tracks (timedtext XML).
+ * Preferring a manually uploaded track over an auto-generated (asr) one for the same language,
+ * matching the default track the player picks.
+ * @param {import('youtubei.js').YT.VideoInfo} info
+ * @param {string} [languageCode] the `language_code` of the caption track to fetch, defaults to the player's default track
+ * @returns {Promise<LocalTranscript | null>}
+ */
+export async function getLocalTranscript(info, languageCode = undefined) {
+  const captionTracks = info?.captions?.caption_tracks
+  if (!captionTracks || captionTracks.length === 0) {
+    return null
+  }
+
+  try {
+    let track
+    if (languageCode !== undefined) {
+      track = captionTracks.find(t => t.language_code === languageCode && t.kind !== 'asr') ??
+        captionTracks.find(t => t.language_code === languageCode)
+    } else {
+      const defaultIndex = info.captions.audio_tracks?.[info.captions.default_audio_track_index ?? 0]
+        ?.default_caption_track_index
+
+      if (defaultIndex !== undefined && captionTracks[defaultIndex]) {
+        track = captionTracks[defaultIndex]
+      } else {
+        const asr = captionTracks.find(t => t.kind === 'asr')
+        track = captionTracks.find(t =>
+          t.kind !== 'asr' && (!asr || t.language_code === asr.language_code)
+        ) ?? captionTracks[0]
+      }
+    }
+
+    if (!track?.base_url) {
+      return null
+    }
+
+    const url = new URL(track.base_url)
+    url.searchParams.set('fmt', 'srv3')
+
+    const response = await fetch(url)
+    if (!response.ok) {
+      console.error(`Transcript request failed with status ${response.status}`)
+      return null
+    }
+
+    const xml = await response.text()
+    const segments = parseTimedTextXml(xml)
+
+    if (segments.length === 0) {
+      return null
+    }
+
+    const languages = captionTracks.map(t => ({
+      code: t.language_code,
+      name: t.name?.toString() ?? t.language_code
+    }))
+
+    return {
+      segments,
+      languages,
+      selectedLanguage: track.language_code
+    }
+  } catch (error) {
+    console.error('Failed to get transcript', error)
+    return null
   }
 }
 

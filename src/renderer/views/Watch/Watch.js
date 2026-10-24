@@ -7,6 +7,7 @@ import FtLoader from '../../components/FtLoader/FtLoader.vue'
 import FtShakaVideoPlayer from '../../components/ft-shaka-video-player/ft-shaka-video-player.vue'
 import WatchVideoInfo from '../../components/WatchVideoInfo/WatchVideoInfo.vue'
 import WatchVideoChapters from '../../components/WatchVideoChapters/WatchVideoChapters.vue'
+import WatchVideoTranscript from '../../components/WatchVideoTranscript/WatchVideoTranscript.vue'
 import WatchVideoDescription from '../../components/WatchVideoDescription/WatchVideoDescription.vue'
 import CommentSection from '../../components/CommentSection/CommentSection.vue'
 import WatchVideoLiveChat from '../../components/WatchVideoLiveChat/WatchVideoLiveChat.vue'
@@ -26,7 +27,9 @@ import {
 } from '../../helpers/utils'
 import {
   getAccountCookie,
+  getLocalTranscript,
   getLocalVideoInfo,
+  hasLocalTranscript,
   mapLocalLegacyFormat,
   parseLocalSubscriberCount,
   parseLocalTextRuns,
@@ -72,6 +75,7 @@ export default defineComponent({
     'ft-shaka-video-player': FtShakaVideoPlayer,
     'watch-video-info': WatchVideoInfo,
     'watch-video-chapters': WatchVideoChapters,
+    'watch-video-transcript': WatchVideoTranscript,
     'watch-video-description': WatchVideoDescription,
     CommentSection,
     'watch-video-live-chat': WatchVideoLiveChat,
@@ -130,6 +134,13 @@ export default defineComponent({
       videoCurrentChapterIndex: 0,
       /** @type {'chapters' | 'keyMoments'} */
       videoChaptersKind: 'chapters',
+      hasTranscript: false,
+      /** @type {import('../../helpers/api/local').LocalTranscriptSegment[]} */
+      transcriptSegments: [],
+      /** @type {string[]} */
+      transcriptLanguages: [],
+      transcriptSelectedLanguage: '',
+      transcriptLoading: true,
       channelName: '',
       channelThumbnail: '',
       channelId: '',
@@ -348,6 +359,10 @@ export default defineComponent({
     },
   },
   created: function () {
+    // Stored outside data() to keep the youtubei.js objects non-reactive,
+    // as vue's proxy breaks the private fields inside youtubei.js classes
+    this.localVideoInfo = null
+
     this.videoId = this.$route.params.id
     this.activeFormat = this.defaultVideoFormat
     // So that the value for this session remains unchanged even if setting changed
@@ -361,6 +376,30 @@ export default defineComponent({
     this.onMountedDependOnLocalStateLoading()
   },
   methods: {
+    /**
+     * Fetches the transcript in the default language,
+     * or a specific language when switching via the language dropdown.
+     * @param {string} [languageCode]
+     */
+    updateTranscript: async function (languageCode = undefined) {
+      if (!this.localVideoInfo) { return }
+
+      this.transcriptLoading = true
+
+      const transcript = await getLocalTranscript(this.localVideoInfo, languageCode)
+
+      if (transcript && transcript.segments.length > 0) {
+        this.transcriptSegments = transcript.segments
+        this.transcriptLanguages = transcript.languages
+        this.transcriptSelectedLanguage = transcript.selectedLanguage
+        this.hasTranscript = true
+      } else {
+        this.hasTranscript = false
+      }
+
+      this.transcriptLoading = false
+    },
+
     async reloadView() {
       await this.handleRouteChange()
 
@@ -414,6 +453,12 @@ export default defineComponent({
       this.videoChapters = []
       this.videoCurrentChapterIndex = 0
       this.videoChaptersKind = 'chapters'
+      this.hasTranscript = false
+      this.transcriptSegments = []
+      this.transcriptLanguages = []
+      this.transcriptSelectedLanguage = ''
+      this.transcriptLoading = true
+      this.localVideoInfo = null
       this.channelName = ''
       this.channelThumbnail = ''
       this.channelId = ''
@@ -519,6 +564,11 @@ export default defineComponent({
         const videoInfo = await getLocalVideoInfo(this.videoId, accountCookie)
         const { info: result, poToken, clientInfo, adEndTimeUnixMs, contentDisclosures } = videoInfo
         this.contentDisclosures = contentDisclosures || null
+        this.localVideoInfo = result
+
+        if (hasLocalTranscript(result)) {
+          this.updateTranscript()
+        }
 
         const playabilityStatus = result.playability_status
         this.playabilityStatus = playabilityStatus.status

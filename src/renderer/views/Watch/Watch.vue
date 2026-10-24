@@ -175,6 +175,18 @@
         :class="{ theatreWatchVideo: useTheatreMode }"
         @timestamp-event="changeTimestamp"
       />
+      <watch-video-transcript
+        v-if="!isLoading && hasTranscript"
+        :video-title="videoTitle"
+        :segments="transcriptSegments"
+        :languages="transcriptLanguages"
+        :selected-language="transcriptSelectedLanguage"
+        :loading="transcriptLoading"
+        class="watchVideo"
+        :class="{ theatreWatchVideo: useTheatreMode }"
+        @timestamp-event="changeTimestamp"
+        @language-change="updateTranscript"
+      />
       <watch-video-description
         v-if="!isLoading && !hideVideoDescription"
         :description="videoDescription"

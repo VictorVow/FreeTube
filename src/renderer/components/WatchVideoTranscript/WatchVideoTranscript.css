@@ -1,0 +1,79 @@
+.videoTranscript {
+  overflow-y: hidden;
+}
+
+.transcriptSummary {
+  margin-block: 10px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.transcriptTitle {
+  margin-block: 0;
+}
+
+.transcriptChevron {
+  vertical-align: middle;
+}
+
+.transcriptDetails[open] .transcriptChevron {
+  transform: translateX(4px) rotate(90deg);
+}
+
+.transcriptDetails[open]:dir(rtl) .transcriptChevron {
+  transform: translateX(-4px) rotate(90deg);
+}
+
+.transcriptToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-block-start: 15px;
+}
+
+.transcriptLanguageSelect {
+  max-inline-size: 300px;
+}
+
+.transcriptLoading {
+  margin-block-start: 15px;
+}
+
+.transcriptWrapper {
+  margin-block-start: 15px;
+  max-block-size: 250px;
+  overflow-y: scroll;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.transcriptSegment {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  padding: 4px;
+  border-radius: 5px;
+}
+
+.transcriptSegment:hover,
+.transcriptSegment:focus-visible {
+  background-color: var(--side-nav-hover-color);
+}
+
+.segmentTimestamp {
+  flex-shrink: 0;
+  padding-block: 3px;
+  padding-inline: 4px;
+  border-radius: 5px;
+  background-color: var(--accent-color);
+  color: var(--text-with-accent-color);
+}
+
+.segmentText {
+  margin: 0;
+}
